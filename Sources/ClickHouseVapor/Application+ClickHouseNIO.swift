@@ -16,6 +16,7 @@ import Vapor
 @_exported import struct ClickHouseNIO.ClickHouseDateTime64
 @_exported import struct ClickHouseNIO.ClickHouseEnum8
 @_exported import struct ClickHouseNIO.ClickHouseEnum16
+@_exported import struct ClickHouseNIO.TLSConfiguration
 
 /// Vapor `Application.ClickHouse` and `Request.ClickHouse` implement this procotol to be used later for queries
 public protocol ClickHouseConnectionProtocol {
@@ -41,14 +42,16 @@ public struct ClickHousePoolConfiguration {
         password: String? = nil,
         database: String? = nil,
         maxConnectionsPerEventLoop: Int = 1,
-        requestTimeout: TimeAmount = .seconds(10)
+        requestTimeout: TimeAmount = .seconds(10),
+        tlsConfiguration: TLSConfiguration? = nil
     ) throws {
         self.configuration = try ClickHouseConfiguration(
             hostname: hostname,
             port: port,
             user: user,
             password: password,
-            database: database
+            database: database,
+            tlsConfiguration: tlsConfiguration
         )
         self.maxConnectionsPerEventLoop = maxConnectionsPerEventLoop
         self.requestTimeout = requestTimeout
