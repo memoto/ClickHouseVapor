@@ -72,7 +72,7 @@ public struct ClickHouseEngineReplacingMergeTree: ClickHouseEngine {
             }
         }.joined(separator: ",")
 
-        let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
+        let onCluster = cluster.map { "ON CLUSTER '\($0)'" } ?? ""
         let engine = if let cluster {
             "ReplicatedReplacingMergeTree('/clickhouse/\(cluster)/tables/{database}.{table}/{shard}', '{replica}')"
         } else {
@@ -146,7 +146,7 @@ public struct ClickHouseEngineReplicatedDistributed: ClickHouseEngine {
             }
         }.joined(separator: ",")
 
-        let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
+        let onCluster = cluster.map { "ON CLUSTER '\($0)'" } ?? ""
         let zkPath = "/clickhouse/\(cluster ?? "")/tables/{database}.{table}/{shard}"
         var query =
         """
@@ -163,7 +163,7 @@ public struct ClickHouseEngineReplicatedDistributed: ClickHouseEngine {
 
     /// Distributed proxy — fans queries across shards. Schema is copied from the local table via `AS`.
     public func createTableQuery(columns: [ClickHouseColumnConvertible]) -> String {
-        let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
+        let onCluster = cluster.map { "ON CLUSTER '\($0)'" } ?? ""
         let dbArg = database.map { "'\($0)'" } ?? "currentDatabase()"
         return """
         CREATE TABLE IF NOT EXISTS \(tableWithDatabase) \(onCluster) AS \(localTableWithDatabase)

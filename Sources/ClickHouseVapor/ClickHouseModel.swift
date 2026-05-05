@@ -114,7 +114,7 @@ extension ClickHouseModel {
     ) -> EventLoopFuture<Void> {
         let engine = engine ?? Self.engine
         if let cluster = engine.cluster {
-            let query = "DROP TABLE IF EXISTS \(engine.tableWithDatabase) ON CLUSTER \(cluster)"
+            let query = "DROP TABLE IF EXISTS \(engine.tableWithDatabase) ON CLUSTER '\(cluster)'"
             connection.logger.info("\(query)")
             // deletes on a cluster, return some information
             return connection.query(sql: query).transform(to: ())
