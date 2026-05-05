@@ -66,9 +66,11 @@ public struct ClickHouseEngineReplacingMergeTree: ClickHouseEngine {
         }.joined(separator: ",")
 
         let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
-        let engineReplicated = "ReplicatedReplacingMergeTree('/clickhouse/{cluster}/tables/{database}.{table}/{shard}', '{replica}')"
-        let engineNormal = "ReplacingMergeTree()"
-        let engine = cluster != nil ? engineReplicated : engineNormal
+        let engine = if let cluster {
+            "ReplicatedReplacingMergeTree('/clickhouse/\(cluster)/tables/{database}.{table}/{shard}', '{replica}')"
+        } else {
+            "ReplacingMergeTree()"
+        }
 
         var query =
         """
