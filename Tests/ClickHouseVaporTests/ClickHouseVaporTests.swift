@@ -107,8 +107,77 @@ final class ClickHouseVaporTests: XCTestCase {
         ("testPing", testPing),
         ("testModel", testModel),
         ("testDifferingRowsInsert", testDifferingRowsInsert),
-        ("testEmptyModelInsert", testEmptyModelInsert)
+        ("testEmptyModelInsert", testEmptyModelInsert),
+        ("testReplicatedDistributedLocalQuery", testReplicatedDistributedLocalQuery),
+        ("testReplicatedDistributedProxyQuery", testReplicatedDistributedProxyQuery),
+        ("testReplicatedDistributedQueriesWithDatabase", testReplicatedDistributedQueriesWithDatabase)
     ]
+
+    public func testReplicatedDistributedLocalQuery() {
+        let columns = InheritedTestModel().properties
+        let engine = ClickHouseEngineReplicatedDistributed(
+            table: "events",
+            database: nil,
+            cluster: "named-cluster",
+            partitionBy: "toYYYYMM(toDateTime(timestamp))",
+            shardingKey: "cityHash64(stationID)"
+        )
+
+        XCTAssertEqual(
+            engine.createLocalTableQuery(columns: columns),
+            """
+            CREATE TABLE IF NOT EXISTS `events_local` ON CLUSTER named-cluster (timestamp Int64,stationID LowCardinality(String),temperature Float32)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/named-cluster/tables/{database}.{table}/{shard}', '{replica}')
+            PRIMARY KEY (timestamp,stationID) PARTITION BY (toYYYYMM(toDateTime(timestamp))) ORDER BY (timestamp,stationID)
+            """
+        )
+    }
+
+    public func testReplicatedDistributedProxyQuery() {
+        let columns = InheritedTestModel().properties
+        let engine = ClickHouseEngineReplicatedDistributed(
+            table: "events",
+            database: nil,
+            cluster: "named-cluster",
+            partitionBy: "toYYYYMM(toDateTime(timestamp))",
+            shardingKey: "cityHash64(stationID)"
+        )
+
+        XCTAssertEqual(
+            engine.createTableQuery(columns: columns),
+            """
+            CREATE TABLE IF NOT EXISTS `events` ON CLUSTER named-cluster AS `events_local`
+            ENGINE = Distributed('named-cluster', currentDatabase(), 'events_local', cityHash64(stationID))
+            """
+        )
+    }
+
+    public func testReplicatedDistributedQueriesWithDatabase() {
+        let columns = InheritedTestModel().properties
+        let engine = ClickHouseEngineReplicatedDistributed(
+            table: "events",
+            database: "metrics",
+            cluster: "named-cluster"
+        )
+
+        let queries = engine.createTableQueries(columns: columns)
+        XCTAssertEqual(queries.count, 2)
+        XCTAssertEqual(
+            queries[0],
+            """
+            CREATE TABLE IF NOT EXISTS `metrics`.`events_local` ON CLUSTER named-cluster (timestamp Int64,stationID LowCardinality(String),temperature Float32)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/named-cluster/tables/{database}.{table}/{shard}', '{replica}')
+            PRIMARY KEY (timestamp,stationID) ORDER BY (timestamp,stationID)
+            """
+        )
+        XCTAssertEqual(
+            queries[1],
+            """
+            CREATE TABLE IF NOT EXISTS `metrics`.`events` ON CLUSTER named-cluster AS `metrics`.`events_local`
+            ENGINE = Distributed('named-cluster', 'metrics', 'events_local', rand())
+            """
+        )
+    }
 
     func testPing() {
         let app = Application(.testing)

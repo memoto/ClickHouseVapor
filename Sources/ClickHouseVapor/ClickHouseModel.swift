@@ -67,14 +67,18 @@ extension ClickHouseModel {
     ) -> EventLoopFuture<Void> {
         let fields = Self().properties
         let engine = engine ?? Self.engine
-        let query = engine.createTableQuery(columns: fields)
-        connection.logger.debug("\(query)")
+        let queries = engine.createTableQueries(columns: fields)
 
-        if engine.isUsingCluster {
-            // cluster operation, return some information
-            return connection.query(sql: query).transform(to: ())
-        } else {
-            return connection.command(sql: query)
+        return queries.reduce(connection.eventLoop.makeSucceededFuture(())) { acc, query in
+            acc.flatMap {
+                connection.logger.debug("\(query)")
+                if engine.isUsingCluster {
+                    // cluster operation, return some information
+                    return connection.query(sql: query).transform(to: ())
+                } else {
+                    return connection.command(sql: query)
+                }
+            }
         }
     }
 

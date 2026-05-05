@@ -36,6 +36,13 @@ extension ClickHouseEngine {
         }
         return "`\(self.table)`"
     }
+
+    /// All DDL statements needed to create the table(s). Engines that need
+    /// multiple statements (e.g. Distributed wrapping a local replicated table)
+    /// override this to return more than one query.
+    public func createTableQueries(columns: [ClickHouseColumnConvertible]) -> [String] {
+        [createTableQuery(columns: columns)]
+    }
 }
 
 public struct ClickHouseEngineReplacingMergeTree: ClickHouseEngine {
@@ -83,6 +90,89 @@ public struct ClickHouseEngineReplacingMergeTree: ClickHouseEngine {
         }
         query += " ORDER BY (\(order.joined(separator: ",")))"
         return query
+    }
+}
+
+/// Two-table sharded pattern: a local `ReplicatedReplacingMergeTree` table that
+/// holds the data on each shard/replica, plus a `Distributed` proxy with the
+/// "clean" table name that apps query and insert into. The local table name is
+/// derived by appending `localTableSuffix` (default `_local`) to `table`.
+public struct ClickHouseEngineReplicatedDistributed: ClickHouseEngine {
+    public let table: String
+    public let database: String?
+    public let cluster: String?
+    public let localTableSuffix: String
+    public let partitionBy: String?
+    /// Sharding key expression, e.g. `rand()` or `cityHash64(build_id)`.
+    public let shardingKey: String
+
+    public init(
+        table: String,
+        database: String?,
+        cluster: String,
+        localTableSuffix: String = "_local",
+        partitionBy: String? = nil,
+        shardingKey: String = "rand()"
+    ) {
+        self.table = table
+        self.database = database
+        self.cluster = cluster
+        self.localTableSuffix = localTableSuffix
+        self.partitionBy = partitionBy
+        self.shardingKey = shardingKey
+    }
+
+    private var localTable: String { table + localTableSuffix }
+
+    private var localTableWithDatabase: String {
+        if let database = database {
+            return "`\(database)`.`\(localTable)`"
+        }
+        return "`\(localTable)`"
+    }
+
+    /// Local backing table — `ReplicatedReplacingMergeTree`, one per shard/replica.
+    public func createLocalTableQuery(columns: [ClickHouseColumnConvertible]) -> String {
+        let ids = columns.compactMap { $0.isPrimary ? $0.key : nil }
+        assert(ids.count >= 1)
+        let order = columns.compactMap { $0.isOrderBy ? $0.key : nil }
+        assert(order.count >= 1)
+
+        let columnDescriptions = columns.map { field -> String in
+            if field.isLowCardinality && field.clickHouseTypeName().supportsLowCardinality {
+                return "\(field.key) LowCardinality(\(field.clickHouseTypeName().string))"
+            } else {
+                return "\(field.key) \(field.clickHouseTypeName().string)"
+            }
+        }.joined(separator: ",")
+
+        let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
+        let zkPath = "/clickhouse/\(cluster ?? "")/tables/{database}.{table}/{shard}"
+        var query =
+        """
+        CREATE TABLE IF NOT EXISTS \(localTableWithDatabase) \(onCluster) (\(columnDescriptions))
+        ENGINE = ReplicatedReplacingMergeTree('\(zkPath)', '{replica}')
+        PRIMARY KEY (\(ids.joined(separator: ",")))
+        """
+        if let partitionBy = partitionBy {
+            query += " PARTITION BY (\(partitionBy))"
+        }
+        query += " ORDER BY (\(order.joined(separator: ",")))"
+        return query
+    }
+
+    /// Distributed proxy — fans queries across shards. Schema is copied from the local table via `AS`.
+    public func createTableQuery(columns: [ClickHouseColumnConvertible]) -> String {
+        let onCluster = cluster.map { "ON CLUSTER \($0)" } ?? ""
+        let dbArg = database.map { "'\($0)'" } ?? "currentDatabase()"
+        return """
+        CREATE TABLE IF NOT EXISTS \(tableWithDatabase) \(onCluster) AS \(localTableWithDatabase)
+        ENGINE = Distributed('\(cluster ?? "")', \(dbArg), '\(localTable)', \(shardingKey))
+        """
+    }
+
+    public func createTableQueries(columns: [ClickHouseColumnConvertible]) -> [String] {
+        [createLocalTableQuery(columns: columns), createTableQuery(columns: columns)]
     }
 }
 
