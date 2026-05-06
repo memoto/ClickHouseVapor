@@ -126,7 +126,7 @@ final class ClickHouseVaporTests: XCTestCase {
         XCTAssertEqual(
             engine.createLocalTableQuery(columns: columns),
             """
-            CREATE TABLE IF NOT EXISTS `events_local` ON CLUSTER named-cluster (timestamp Int64,stationID LowCardinality(String),temperature Float32)
+            CREATE TABLE IF NOT EXISTS `events_local` ON CLUSTER 'named-cluster' (timestamp Int64,stationID LowCardinality(String),temperature Float32)
             ENGINE = ReplicatedReplacingMergeTree('/clickhouse/named-cluster/tables/{database}.{table}/{shard}', '{replica}')
             PRIMARY KEY (timestamp,stationID) PARTITION BY (toYYYYMM(toDateTime(timestamp))) ORDER BY (timestamp,stationID)
             """
@@ -146,7 +146,7 @@ final class ClickHouseVaporTests: XCTestCase {
         XCTAssertEqual(
             engine.createTableQuery(columns: columns),
             """
-            CREATE TABLE IF NOT EXISTS `events` ON CLUSTER named-cluster AS `events_local`
+            CREATE TABLE IF NOT EXISTS `events` ON CLUSTER 'named-cluster' (timestamp Int64,stationID LowCardinality(String),temperature Float32)
             ENGINE = Distributed('named-cluster', currentDatabase(), 'events_local', cityHash64(stationID))
             """
         )
@@ -165,7 +165,7 @@ final class ClickHouseVaporTests: XCTestCase {
         XCTAssertEqual(
             queries[0],
             """
-            CREATE TABLE IF NOT EXISTS `metrics`.`events_local` ON CLUSTER named-cluster (timestamp Int64,stationID LowCardinality(String),temperature Float32)
+            CREATE TABLE IF NOT EXISTS `metrics`.`events_local` ON CLUSTER 'named-cluster' (timestamp Int64,stationID LowCardinality(String),temperature Float32)
             ENGINE = ReplicatedReplacingMergeTree('/clickhouse/named-cluster/tables/{database}.{table}/{shard}', '{replica}')
             PRIMARY KEY (timestamp,stationID) ORDER BY (timestamp,stationID)
             """
@@ -173,7 +173,7 @@ final class ClickHouseVaporTests: XCTestCase {
         XCTAssertEqual(
             queries[1],
             """
-            CREATE TABLE IF NOT EXISTS `metrics`.`events` ON CLUSTER named-cluster AS `metrics`.`events_local`
+            CREATE TABLE IF NOT EXISTS `metrics`.`events` ON CLUSTER 'named-cluster' (timestamp Int64,stationID LowCardinality(String),temperature Float32)
             ENGINE = Distributed('named-cluster', 'metrics', 'events_local', rand())
             """
         )

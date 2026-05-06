@@ -161,12 +161,20 @@ public struct ClickHouseEngineReplicatedDistributed: ClickHouseEngine {
         return query
     }
 
-    /// Distributed proxy — fans queries across shards. Schema is copied from the local table via `AS`.
+    /// Distributed proxy — fans queries across shards.
     public func createTableQuery(columns: [ClickHouseColumnConvertible]) -> String {
+        let columnDescriptions = columns.map { field -> String in
+            if field.isLowCardinality && field.clickHouseTypeName().supportsLowCardinality {
+                return "\(field.key) LowCardinality(\(field.clickHouseTypeName().string))"
+            } else {
+                return "\(field.key) \(field.clickHouseTypeName().string)"
+            }
+        }.joined(separator: ",")
+
         let onCluster = cluster.map { "ON CLUSTER '\($0)'" } ?? ""
         let dbArg = database.map { "'\($0)'" } ?? "currentDatabase()"
         return """
-        CREATE TABLE IF NOT EXISTS \(tableWithDatabase) \(onCluster) AS \(localTableWithDatabase)
+        CREATE TABLE IF NOT EXISTS \(tableWithDatabase) \(onCluster) (\(columnDescriptions))
         ENGINE = Distributed('\(cluster ?? "")', \(dbArg), '\(localTable)', \(shardingKey))
         """
     }
