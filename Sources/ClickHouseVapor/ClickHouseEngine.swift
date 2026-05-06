@@ -14,6 +14,8 @@ public protocol ClickHouseEngine: Sendable {
     /// Generate a SQL query to create the table using the defined model columns
     func createTableQuery(columns: [ClickHouseColumnConvertible]) -> String
 
+    func createTableQueries(columns: [ClickHouseColumnConvertible]) -> [String]
+
     /// Set if operations run on a cluster. In this case, the create statement will return some query data.
     var cluster: String? { get }
 
